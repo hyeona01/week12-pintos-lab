@@ -25,6 +25,7 @@ The manual is available at https://casys-kaist.github.io/pintos-kaist/.
 
 - **형식**: `week{주차}-{이니셜}-{작업번호}`
 - **예시**: `week12-sha-01`
+  
 ※ **작업번호**는 각자의 작업 단위 별로 나누어 설정하면 됩니다.(테스트 케이스 별, 혹은 주요 구현사항 별로 나눌 수 있습니다.)
 
 ## 📎 Workflow
