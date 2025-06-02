@@ -37,6 +37,36 @@ static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
+/*custom helpers*/
+static unsigned comp_less_addr(const struct hash_elem *a, const struct hash_elem *b, void *aux){
+	const struct page *p1 = hash_entry(a, struct page, elem);
+	const struct page *p2 = hash_entry(b, struct page, elem);
+
+	return p1->va < p2->va;
+}
+
+
+unsigned hashing_page(const struct hash_elem *e, void *aux UNUSED){
+	const struct page *p = hash_entry(e, struct page, elem);
+	return hash_bytes(&(p->va), sizeof(p->va));
+}
+
+bool insert_page(struct hash *ha, struct page *pa){
+	struct hash_elem* check = hash_insert(ha, &(pa->elem));
+	if(check == NULL){
+		return true;
+	}
+	return false;
+}
+
+bool delete_page(struct hash *ha, struct page *pa){
+	struct hash_elem* check = hash_delete(ha, &(pa->elem));
+	if(check == NULL){
+		return true;
+	}
+	return false;
+}
+
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
@@ -60,11 +90,17 @@ err:
 	return false;
 }
 
+
+
+
+
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	// uint64_t hash_val = hash_bytes(va, sizeof(va));
+	// hash_find(&spt->spt_hash, );
 
 	return page;
 }
@@ -174,6 +210,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(&spt->spt_hash, hashing_page, comp_less_addr, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
