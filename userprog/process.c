@@ -242,6 +242,9 @@ process_exec(void* f_name) {
 	/* We first kill the current context */
 	process_cleanup();
 
+	/* Initializing the set of vm_entries */
+	supplemental_page_table_init(&thread_current()->spt);
+
 	/* And then load the binary */
 	success = load(file_name, &_if);
 	// hex_dump((void*)_if.rsp, (void*)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
@@ -330,6 +333,9 @@ process_exit(void) {
 
 	/* child list 정리 */
 	remove_child_process();
+
+	/* SPT 정리 */
+	supplemental_page_table_kill(&curr->spt);
 
 	/* 프로세스 정리 */
 	process_cleanup();
@@ -762,6 +768,17 @@ lazy_load_segment(struct page* page, void* aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct lazy_load_arg* arg = (struct lazy_load_arg*)aux;
+
+	file_seek(arg->file, arg->ofs); // file 시작점 이동
+
+	/* Load this page. */
+	if (file_read(arg->file, page->frame->kva, arg->read_bytes) != (int)arg->read_bytes) {
+		return false;
+	}
+	memset(page->frame->kva + arg->read_bytes, 0, PGSIZE - arg->read_bytes);
+
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -792,9 +809,14 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+		/* demand page: 최초로 접근할 때 물리 메모리에 로드되도록 필요 정보를 aux에 담음 */
+		struct lazy_load_arg* aux = malloc(sizeof(struct lazy_load_arg));
+		aux->file = file;
+		aux->ofs = ofs;
+		aux->read_bytes = page_read_bytes;
+
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void* aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
+		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
 			writable, lazy_load_segment, aux))
 			return false;
 
@@ -816,6 +838,14 @@ setup_stack(struct intr_frame* if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	 /* TODO: Your code goes here */
+
+	/* stack 시작 주소로부터 1 page 만큼의 공간을 확보하고 SPT 등록 */
+	if (vm_alloc_page(VM_ANON, stack_bottom, true)) {
+		/* frame 매핑 + PTE 설정 */
+		success = vm_claim_page(stack_bottom);
+		/* stack pointer 설정 */
+		if_->rsp = USER_STACK;
+	}
 
 	return success;
 }
