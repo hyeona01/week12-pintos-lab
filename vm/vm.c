@@ -116,7 +116,7 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-
+	succ = insert_page(&(spt->spt_hash), page);
 	return succ;
 }
 
