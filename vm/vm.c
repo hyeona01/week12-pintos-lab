@@ -99,10 +99,15 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
-	// uint64_t hash_val = hash_bytes(va, sizeof(va));
-	// hash_find(&spt->spt_hash, );
+	page = (struct page*)malloc(sizeof(struct page));
+	page->va = va;
+	
+	struct hash_elem* find_e = hash_find(&spt->spt_hash, &(page->elem));
+	free(page);
 
-	return page;
+	if(find_e == NULL) return NULL;
+
+	return hash_entry(find_e, struct page, elem);
 }
 
 /* Insert PAGE into spt with validation. */
