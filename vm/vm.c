@@ -121,8 +121,21 @@ vm_evict_frame(void) {
  * space.*/
 static struct frame*
 vm_get_frame(void) {
-	struct frame* frame = NULL;
-	/* TODO: Fill this function. */
+	struct frame* frame = malloc(sizeof(struct frame));
+	if (frame == NULL) {
+		return false;
+	}
+
+	void* kernel_va;
+
+	kernel_va = palloc_get_page(PAL_USER | PAL_ZERO);
+	while (kernel_va == NULL) {
+		vm_evict_frame();
+		kernel_va = palloc_get_page(PAL_USER | PAL_ZERO); // 재시도
+	}
+
+	frame->kva = kernel_va;
+	frame->page = NULL;
 
 	ASSERT(frame != NULL);
 	ASSERT(frame->page == NULL);
@@ -162,8 +175,12 @@ vm_dealloc_page(struct page* page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page(void* va UNUSED) {
-	struct page* page = NULL;
-	/* TODO: Fill this function */
+	struct page* page;
+
+	page = spt_find_page(&thread_current()->spt, va);
+	if (page == NULL) {
+		return false;
+	}
 
 	return vm_do_claim_page(page);
 }
@@ -178,6 +195,12 @@ vm_do_claim_page(struct page* page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	bool rw = page->writable; // writable 추가
+
+	if (!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, rw)) {
+		free(frame);
+		return false;
+	}
 
 	return swap_in(page, frame->kva);
 }
