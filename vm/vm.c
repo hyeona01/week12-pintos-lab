@@ -13,14 +13,14 @@ void
 vm_init (void) {
 	vm_anon_init ();
 	vm_file_init ();
-
-	list_init(&frame_list);
 #ifdef EFILESYS  /* For project 4 */
 	pagecache_init ();
 #endif
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_list);
+
 }
 
 /* Get the type of the page. This function is useful if you want to know the
