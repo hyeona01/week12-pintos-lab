@@ -6,6 +6,7 @@
 #include "threads/mmu.h"
 
 static struct list frame_list;
+static struct lock frame_lock;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -20,7 +21,7 @@ vm_init (void) {
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
 	list_init(&frame_list);
-
+	lock_init(&frame_lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -83,13 +84,21 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
+	// to do
+	struct page* new_page = (struct page*)malloc(sizeof(struct page));
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 
+		// need to modify(control with switch case)
+		if(type == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
+		else uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
+
+		new_page->rw_w = writable;
 		/* TODO: Insert the page into the spt. */
+		return spt_insert_page(spt, new_page);
 	}
 err:
 	return false;
@@ -105,8 +114,8 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
 	page = (struct page*)malloc(sizeof(struct page));
-	page->va = va;
-	
+	page->va = pg_round_down(va);
+
 	struct hash_elem* find_e = hash_find(&spt->spt_hash, &(page->elem));
 	free(page);
 
@@ -191,7 +200,10 @@ vm_get_frame (void) {
 		return frame;
 	}
 
+	lock_acquire(&frame_lock);
 	list_push_back(&frame_list, &(frame->elem));
+	lock_release(&frame_lock);
+
 	frame->page = NULL;
 
 	return frame;
