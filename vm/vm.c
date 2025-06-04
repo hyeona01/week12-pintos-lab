@@ -146,7 +146,6 @@ static struct frame *vm_evict_frame(void) {
 // 사용자 풀 메모리가 가득 차면 이 함수는 프레임을 제거하여 사용 가능한 메모리
 // 공간을 가져옵니다.
 static struct frame *vm_get_frame(void) {
-  struct frame *frame = NULL;
   /* TODO: Fill this function. */
   void *kva = palloc_get_page(PAL_USER); // 물리 메모리 할당
 
@@ -205,10 +204,11 @@ void vm_dealloc_page(struct page *page) {
 /* Claim the page that allocate on VA. */
 // VA로 할당된 페이지를 선언합니다.
 bool vm_claim_page(void *va UNUSED) {
-  struct page *page = NULL;
   /* TODO: Fill this function */
   // 기능을 구현하세요.
-
+  struct page *page = spt_find_page(&thread_current()->spt, va);
+  if (page == NULL)
+    return false;
   return vm_do_claim_page(page);
 }
 
