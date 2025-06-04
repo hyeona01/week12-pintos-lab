@@ -5,6 +5,9 @@
 #include "threads/malloc.h"
 #include "vm/inspect.h"
 
+static struct list frame_table;
+static struct lock frame_table_lock;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 // 각 하위 시스템의 초기화 코드를 호출하여 가상 메모리 하위 시스템을
@@ -19,6 +22,10 @@ void vm_init(void) {
   /* DO NOT MODIFY UPPER LINES. */
   // ※ 위의 라인은 수정하지마세요. ※
   /* TODO: Your code goes here. */
+
+  // Frame Table 초기화
+  list_init(&frame_table);      // frame 테이블용 리스트 초기화
+  lock_init(&frame_table_lock); // 리스트 접근용 락 초기화
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -129,6 +136,22 @@ static struct frame *vm_evict_frame(void) {
 static struct frame *vm_get_frame(void) {
   struct frame *frame = NULL;
   /* TODO: Fill this function. */
+  void *kva = palloc_get_page(PAL_USER); // 물리 메모리 할당
+
+  if (kva == NULL)
+    PANIC("TODO: vm_evict_frame 구현");
+
+  struct frame *frame = malloc(sizeof(struct frame));
+  if (frame == NULL) {
+    PANIC("프레임구조 할당 실패");
+  }
+
+  frame->kva = kva;
+  frame->page = NULL;
+
+  lock_acquire(&frame_table_lock);
+  list_push_back(&frame_table, &frame->elem);
+  lock_release(&frame_table_lock);
 
   ASSERT(frame != NULL);
   ASSERT(frame->page == NULL);
@@ -189,6 +212,12 @@ static bool vm_do_claim_page(struct page *page) {
   /* TODO: Insert page table entry to map page's VA to frame's PA. */
   // 페이지의 VA를 프레임의 PA에 매핑하기 위해 페이지 테이블 항목을 삽입합니다.
 
+  /* VA → PA 매핑 */
+  if (!pml4_set_page(thread_current()->pml4, page->va, frame->kva,
+                     page->writable))
+    return false;
+
+  /* 스왑에서 내용 복원 */
   return swap_in(page, frame->kva);
 }
 
