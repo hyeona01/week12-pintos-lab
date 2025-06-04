@@ -243,7 +243,7 @@ process_exec(void* f_name) {
 	process_cleanup();
 
 	/* Initializing the set of vm_entries */
-	supplemental_page_table_init(&thread_current()->spt);
+	// supplemental_page_table_init(&thread_current()->spt);
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
@@ -376,6 +376,7 @@ process_cleanup(void) {
 void
 process_activate(struct thread* next) {
 	/* Activate thread's page tables. */
+	printf("***pml4: %s - %p\n", next->name, next->pml4);
 	pml4_activate(next->pml4);
 
 	/* Set thread's kernel stack for use in processing interrupts. */
@@ -816,7 +817,7 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 		aux->read_bytes = page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 			writable, lazy_load_segment, aux))
 			return false;
 
