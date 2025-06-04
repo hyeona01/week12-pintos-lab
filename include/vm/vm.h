@@ -1,5 +1,6 @@
 #ifndef VM_VM_H
 #define VM_VM_H
+#include "lib/kernel/hash.h"
 #include "threads/palloc.h"
 #include <stdbool.h>
 
@@ -46,7 +47,8 @@ struct page {
   struct frame *frame; /* Back reference for frame */
 
   /* Your implementation */
-  bool writable; // 이 페이지가 쓰기 가능한지 여부
+  bool writable;              // 이 페이지가 쓰기 가능한지 여부
+  struct hash_elem hash_elem; // 해시 테이블용
 
   /* Per-type data are binded into the union.
    * Each function automatically detects the current union */
@@ -88,7 +90,9 @@ struct page_operations {
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
-struct supplemental_page_table {};
+struct supplemental_page_table {
+  struct hash hash_table;
+};
 
 #include "threads/thread.h"
 void supplemental_page_table_init(struct supplemental_page_table *spt);

@@ -2,7 +2,9 @@
 /* vm.c: 가상 메모리 객체를 위한 일반 인터페이스. */
 
 #include "vm/vm.h"
+#include "lib/kernel/hash.h"
 #include "threads/malloc.h"
+#include "threads/mmu.h"
 #include "vm/inspect.h"
 
 static struct list frame_table;
@@ -83,20 +85,30 @@ err:
 // spt에서 VA를 찾아 페이지를 반환합니다. 오류가 발생하면 NULL을 반환합니다.
 struct page *spt_find_page(struct supplemental_page_table *spt UNUSED,
                            void *va UNUSED) {
-  struct page *page = NULL;
   /* TODO: Fill this function. */
+  // 페이지 단위로 주소를 정렬
+  va = pg_round_down(va); // 페이지 단위로 주소를 정렬
 
-  return page;
+  struct page temp; // 비교용 임시 페이지 생성
+  temp.va = va;
+
+  // 해시 테이블에서 검색
+  struct hash_elem *e = hash_find(&spt->hash_table, &temp.hash_elem);
+
+  // 찾았으면 page 구조체로 변환하여 반환
+  return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
 }
 
 /* Insert PAGE into spt with validation. */
 // 검증을 통해 spt에 PAGE를 삽입합니다.
 bool spt_insert_page(struct supplemental_page_table *spt UNUSED,
                      struct page *page UNUSED) {
-  int succ = false;
   /* TODO: Fill this function. */
+  // 삽입 시도: 중복되면 기존 요소가 반환됨
+  struct hash_elem *e = hash_insert(&spt->hash_table, &page->hash_elem);
 
-  return succ;
+  // 삽입 성공 여부 반환, NULL이면 삽입 성공
+  return e == NULL;
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
@@ -221,9 +233,26 @@ static bool vm_do_claim_page(struct page *page) {
   return swap_in(page, frame->kva);
 }
 
+/*----------------------- hash -----------------------------*/
+/* Returns a hash value for page p. */
+unsigned page_hash(struct hash_elem *p_, void *aux UNUSED) {
+  struct page *p = hash_entry(p_, struct page, hash_elem);
+  return hash_bytes(&p->va, sizeof(p->va));
+}
+
+/* Returns true if page a precedes page b. */
+bool page_less(struct hash_elem *a_, struct hash_elem *b_, void *aux UNUSED) {
+  struct page *a = hash_entry(a_, struct page, hash_elem);
+  struct page *b = hash_entry(b_, struct page, hash_elem);
+
+  return a->va < b->va;
+}
+
 /* Initialize new supplemental page table */
 // 새로운 보충 페이지 테이블을 초기화합니다.
-void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED) {}
+void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED) {
+  hash_init(&spt->hash_table, page_hash, page_less, NULL);
+}
 
 /* Copy supplemental page table from src to dst */
 // src에서 dst로 보충 페이지 테이블 복사합니다.
