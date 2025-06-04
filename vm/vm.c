@@ -217,7 +217,8 @@ vm_do_claim_page(struct page* page) {
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	bool rw = page->writable; // writable 추가
 
-	if (install_page(page->va, frame->kva, page->writable)) {
+	if (pml4_get_page(thread_current()->pml4, page->va) == NULL
+		&& pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable)) {
 		return swap_in(page, frame->kva);
 	}
 
