@@ -43,7 +43,7 @@ static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
 /*custom helpers*/
-static unsigned comp_less_addr(const struct hash_elem *a, const struct hash_elem *b, void *aux){
+static bool comp_less_addr(const struct hash_elem *a, const struct hash_elem *b, void *aux){
 	const struct page *p1 = hash_entry(a, struct page, elem);
 	const struct page *p2 = hash_entry(b, struct page, elem);
 
