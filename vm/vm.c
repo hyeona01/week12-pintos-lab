@@ -3,6 +3,9 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/mmu.h"
+
+static struct list frame_list;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -10,6 +13,8 @@ void
 vm_init (void) {
 	vm_anon_init ();
 	vm_file_init ();
+
+	list_init(&frame_list);
 #ifdef EFILESYS  /* For project 4 */
 	pagecache_init ();
 #endif
@@ -131,6 +136,24 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+	struct thread* cur_t = thread_current();
+	struct list_elem* e;
+	struct list_elem* s;
+
+	for (s = e; s != list_end(&frame_list); s = list_next(s)) {
+		victim = list_entry(s, struct frame, elem);
+		if (pml4_is_accessed(cur_t->pml4, victim->page->va))
+			pml4_set_accessed(cur_t->pml4, victim->page->va, 0);
+		else
+			return victim;
+	}
+	for (s = list_begin(&frame_list); s != e; s = list_next(s)) {
+		victim = list_entry(s, struct frame, elem);
+		if (pml4_is_accessed(cur_t->pml4, victim->page->va))
+			pml4_set_accessed(cur_t->pml4, victim->page->va, 0);
+		else
+			return victim;
+	}
 
 	return victim;
 }
@@ -142,6 +165,7 @@ vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
 
+	swap_out(victim->page);
 	return NULL;
 }
 
@@ -154,8 +178,22 @@ vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
 
+	frame = (struct frame*)malloc(sizeof(struct frame));
+	
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+
+	frame->kva = palloc_get_page(PAL_USER);
+
+	if(frame->kva == NULL){
+		frame = vm_evict_frame();
+		frame->page = NULL;
+		return frame;
+	}
+
+	list_push_back(&frame_list, &(frame->elem));
+	frame->page = NULL;
+
 	return frame;
 }
 
@@ -195,6 +233,9 @@ vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
 
+	page = spt_find_page(&thread_current()->spt, va);
+	if(page == NULL) return 0;
+
 	return vm_do_claim_page (page);
 }
 
@@ -208,8 +249,29 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	
+	if (!pml4_set_page (thread_current ()->pml4,
+        page->va,
+        frame->kva,
+        page->rw_w)) {
+        
+        frame->page = NULL;
+        page->frame = NULL;
+        palloc_free_page (frame->kva);
+        free (frame);
+        return false;
+    }
 
-	return swap_in (page, frame->kva);
+    if (!swap_in (page, frame->kva)) {
+        pml4_clear_page (thread_current ()->pml4, page->va);
+        frame->page = NULL;
+        page->frame = NULL;
+        palloc_free_page (frame->kva);
+        free (frame);
+        return false;
+    }
+
+    return true;
 }
 
 /* Initialize new supplemental page table */
