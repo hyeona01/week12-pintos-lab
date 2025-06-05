@@ -80,28 +80,39 @@ bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
-	ASSERT (VM_TYPE(type) != VM_UNINIT)
+	ASSERT(VM_TYPE(type) != VM_UNINIT);
 
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+    struct supplemental_page_table *spt = &thread_current()->spt;
 
-	// to do
-	struct page* new_page = (struct page*)malloc(sizeof(struct page));
-	/* Check wheter the upage is already occupied or not. */
-	if (spt_find_page (spt, upage) == NULL) {
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
+    // 이미 존재하는 페이지인가?
+    if (spt_find_page(spt, upage) != NULL) return false;
 
-		// need to modify(control with switch case)
-		if(type == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
-		else uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
-
-		new_page->rw_w = writable;
-		/* TODO: Insert the page into the spt. */
-		return spt_insert_page(spt, new_page);
-	}
-err:
+    struct page *page = malloc(sizeof(struct page));
+    if (page == NULL) 
 	return false;
+
+	// initializer 설정
+	bool (*initializer)(struct page *, enum vm_type, void *);
+	if (type == VM_ANON) {
+		initializer = anon_initializer;
+	} else if (type == VM_FILE) {
+		initializer = file_backed_initializer;
+	} else {
+		return false; 
+	}
+
+    // UNINIT 페이지로 생성
+    uninit_new(page, upage, init, type, aux, initializer);
+
+	// writable 설정
+	page->rw_w = writable;
+
+    // SPT에 삽입
+    if (!spt_insert_page(spt, page)) {
+        free(page);
+        return false;
+    }
+    return true;
 }
 
 
@@ -224,7 +235,13 @@ bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
+	
+	if (!not_present) return false;  
+
+	// 페이지 정렬 주소로 검색
+	struct page *page = spt_find_page(spt, pg_round_down(addr));
+	if (page == NULL) return false;
+
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
