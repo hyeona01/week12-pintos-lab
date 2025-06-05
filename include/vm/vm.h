@@ -37,6 +37,13 @@ struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
 
+struct vm_aux{
+	struct file* file;
+	off_t ofs;
+	size_t read_bytes;
+	size_t zero_bytes;
+};
+
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
