@@ -161,7 +161,6 @@ __do_fork(void* aux) {
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame* parent_if = &parent->parent_if;
 	bool succ = true;
-	// printf("*** fork - thread : %s\n", current->name);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy(&if_, parent_if, sizeof(struct intr_frame));
@@ -762,6 +761,22 @@ lazy_load_segment(struct page* page, void* aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct lazy_load_aux* file_aux = (struct lazy_load_aux*)aux;
+	size_t page_read_bytes = file_aux->read_bytes;
+	size_t page_zero_bytes = file_aux->zero_bytes;
+
+	file_seek(file_aux->file, file_aux->ofs); // file 시작 위치 설정
+
+	/* Load this page. */
+	if (file_read(file_aux->file, page->frame->kva, page_read_bytes) != (int)page_read_bytes) {
+		palloc_free_page(page->frame->kva);
+		return false;
+	}
+	memset(page->frame->kva + page_read_bytes, 0, page_zero_bytes);
+
+	free(aux);
+
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -793,15 +808,27 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void* aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
-			writable, lazy_load_segment, aux))
+		/* demand page: 최초로 접근할 때(lazy_load_segment) 물리 메모리에 로드되도록 필요 정보를 aux에 담음 */
+		struct lazy_load_aux* aux = malloc(sizeof(struct lazy_load_aux));
+		if (aux == NULL) {
 			return false;
+		}
+
+		aux->file = file;
+		aux->ofs = ofs;
+		aux->read_bytes = page_read_bytes;
+		aux->zero_bytes = page_zero_bytes;
+
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux)) {
+			free(aux);
+			return false;
+		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes; // 다음 페이지로 ofs 이동
 	}
 	return true;
 }
@@ -817,6 +844,16 @@ setup_stack(struct intr_frame* if_) {
 	 * TODO: You should mark the page is stack. */
 	 /* TODO: Your code goes here */
 
+	/* stack 시작 주소로부터 1 page 만큼의 공간을 확보하고 SPT 등록 */
+	if (vm_alloc_page_with_initializer(VM_ANON | VM_MARKER_0, stack_bottom, true, NULL, NULL)) {
+		/* stack은 Lazy Loading 하지 않음 */
+		success = vm_claim_page(stack_bottom);
+		/* stack pointer 설정 */
+		if_->rsp = USER_STACK;
+	}
+
 	return success;
+
+
 }
 #endif /* VM */
