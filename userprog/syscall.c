@@ -122,12 +122,24 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	}
 }
 
+#ifndef VM
 void check_address(void* addr) {
 	if (addr == NULL || !is_user_vaddr(addr) || pml4_get_page(thread_current()->pml4, addr) == NULL)
 	{
 		exit(-1);
 	}
 }
+#else
+struct page *check_address(void *addr) {
+    struct thread *curr = thread_current();
+
+    if (!is_user_vaddr(addr) || addr == NULL || !spt_find_page(&curr->spt, addr))
+        exit(-1);
+
+    return spt_find_page(&curr->spt, addr);
+}
+#endif
+
 
 /* ---------- system calls ---------- */
 void halt(void) {
