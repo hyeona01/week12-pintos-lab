@@ -212,9 +212,6 @@ vm_get_frame(void) {
 
 	frame = (struct frame*)malloc(sizeof(struct frame));
 
-	ASSERT(frame != NULL);
-	// ASSERT(frame->page == NULL);
-
 	frame->kva = palloc_get_page(PAL_USER);
 
 	if (frame->kva == NULL) {
@@ -228,6 +225,9 @@ vm_get_frame(void) {
 	lock_release(&frame_lock);
 
 	frame->page = NULL;
+
+	ASSERT(frame != NULL);
+	ASSERT(frame->page == NULL);
 
 	return frame;
 }
