@@ -31,13 +31,14 @@ vm_anon_init (void) {
 	size_t total_sectors = disk_size(swap_disk);
 	if(!total_sectors) PANIC("vm_anon_init: zero_sectors");
 
+	
 	size_t sector_count = (1<<12) / DISK_SECTOR_SIZE;
 	ASSERT(sector_count > 0);
 
 	size_t total_slots = total_sectors / sector_count;
 	if(!total_slots) PANIC("vm_anon_init: disk too small");
 
-	swap_table = bitmap_creat(total_slots);
+	swap_table = bitmap_create(total_slots);
 	if(swap_table == NULL) PANIC("vm_anon_init: bitmap failed");
 
 	bitmap_set_all(swap_table, false);
