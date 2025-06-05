@@ -7,6 +7,7 @@
 
 static struct list frame_list;
 static struct lock frame_lock;
+static struct list_elem *clock_hand = NULL;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -85,7 +86,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
 	// to do
-	struct page* new_page = (struct page*)malloc(sizeof(struct page));
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
@@ -93,6 +93,8 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		// need to modify(control with switch case)
+		struct page* new_page = (struct page*)malloc(sizeof(struct page));
+
 		if(type == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
 		else uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
 
@@ -145,26 +147,39 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
-	struct thread* cur_t = thread_current();
-	struct list_elem* e;
-	struct list_elem* s;
+	if (list_empty(&frame_list))
+        return NULL;
 
-	for (s = e; s != list_end(&frame_list); s = list_next(s)) {
-		victim = list_entry(s, struct frame, elem);
-		if (pml4_is_accessed(cur_t->pml4, victim->page->va))
-			pml4_set_accessed(cur_t->pml4, victim->page->va, 0);
-		else
-			return victim;
-	}
-	for (s = list_begin(&frame_list); s != e; s = list_next(s)) {
-		victim = list_entry(s, struct frame, elem);
-		if (pml4_is_accessed(cur_t->pml4, victim->page->va))
-			pml4_set_accessed(cur_t->pml4, victim->page->va, 0);
-		else
-			return victim;
-	}
+    /* clock_hand가 아직 초기화되지 않았으면, 리스트의 첫 번째 요소로 설정 */
+    if (clock_hand == NULL || clock_hand == list_end(&frame_list))
+        clock_hand = list_begin(&frame_list);
 
-	return victim;
+    /* 무한 루프 돌며 accessed 비트를 체크 */
+    while (true) {
+        struct frame *f = list_entry(clock_hand, struct frame, elem);
+
+        /* 현재 쓰레드(page_table 기준)에서 accessed 비트 확인 */
+        if (pml4_is_accessed(thread_current()->pml4, f->page->va)) {
+            /* accessed 비트가 1이면, 우선권(Second Chance)을 주고 비트를 지운 후 다음으로 */
+            pml4_set_accessed(thread_current()->pml4, f->page->va, 0);
+
+            /* 다음으로 이동. 리스트 끝에 도달하면 다시 처음으로 순환 */
+            clock_hand = list_next(clock_hand);
+            if (clock_hand == list_end(&frame_list))
+                clock_hand = list_begin(&frame_list);
+        }
+        else {
+            /* accessed 비트가 0이면 이 프레임을 희생자로 선택 */
+            victim = f;
+
+            /* 다음 호출에서도 순환을 이어가기 위해 핸드를 다음 요소로 이동 */
+            clock_hand = list_next(clock_hand);
+            if (clock_hand == list_end(&frame_list))
+                clock_hand = list_begin(&frame_list);
+
+            return victim;
+        }
+    }
 }
 
 /* Evict one page and return the corresponding frame.
