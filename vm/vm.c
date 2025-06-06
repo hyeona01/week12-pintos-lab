@@ -230,8 +230,16 @@ vm_get_frame(void) {
 /* Growing the stack. */
 static void
 vm_stack_growth(void* addr UNUSED) {
-	if (vm_alloc_page(VM_TYPE(VM_ANON | VM_MARKER_0), addr, 1) && vm_claim_page(addr)) {
-		thread_current()->stack_bottom = addr;
+	struct thread* curr = thread_current();
+
+	/* fault address 까지 페이지 1개씩 확장 */
+	while (curr->stack_bottom > addr) {
+		curr->stack_bottom -= PGSIZE;
+
+		if (!vm_alloc_page(VM_TYPE(VM_ANON | VM_MARKER_0), curr->stack_bottom, 1)
+			|| !vm_claim_page(curr->stack_bottom)) {
+			PANIC("Stack growth failed");
+		}
 	}
 }
 
@@ -250,20 +258,21 @@ vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED,
 
 	if (addr == NULL || is_kernel_vaddr(addr)) return false;
 
-	struct supplemental_page_table* spt UNUSED = &thread_current()->spt;
-	struct page* page = spt_find_page(spt, addr);
-
 	/* stack growth */
-	void* growth_addr = pg_round_down(addr);
-	size_t dist = (uint64_t*)USER_STACK - (uint64_t*)growth_addr;
-	void* usp = (void*)f->rsp; // 현재 스택 포인터
+	void* pg_addr = pg_round_down(addr);
+	size_t dist = (uint64_t*)USER_STACK - (uint64_t*)pg_addr;
 
-	if (addr >= usp - 32 && dist <= STACK_MAX) { // 1MB 확인
-		vm_stack_growth(growth_addr);
-		return true;
+	void* rsp = (void*)f->rsp; // 현재 스택 포인터
+
+	if (dist <= STACK_MAX && addr <= USER_STACK) { // 1MB 확인
+		vm_stack_growth(addr);
+		return 1;
 	}
 
 	/* validate and do claim */
+	struct supplemental_page_table* spt UNUSED = &thread_current()->spt;
+	struct page* page = spt_find_page(spt, addr);
+
 	if (not_present) {
 		if (page != NULL) {
 			if (write && !page->rw_w) return 0;
