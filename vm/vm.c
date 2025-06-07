@@ -227,6 +227,16 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	//addr를 PGSIZE단위로 내림(stack은 아래로 성장하기 때문)
+	void* stack_bottom = pg_round_down(addr);
+
+	//익명페이지 할당
+	bool success = vm_alloc_page_with_initializer(VM_ANON | VM_MARKER_0, stack_bottom, true, NULL, NULL);
+
+	if(!success){
+		PANIC("Stack growth failed at %p", stack_bottom);
+	}
+
 }
 
 /* Handle the fault on write_protected page */
@@ -244,17 +254,41 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 
 	if(addr == NULL || is_kernel_vaddr(addr)) return false;
 
+	struct thread* curr = thread_current();
+
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = spt_find_page(spt, addr);
 	
 	if(not_present){
+		// 기존 페이지가 있다면 클레임
 		if(page != NULL){
 			if(write && !page->rw_w) return 0;
 			return vm_do_claim_page(page);
 		}
-		return 0;
+		
+		// 스택 접근인지 다른 접근인지 휴리스틱 판단
+		uint64_t rsp = f->rsp;
+		
+		//조건 1: addr >= rsp - 8
+		if((uint64_t)addr < rsp - 8) {
+			return false;
+		}
+
+		//조건 2: addr < USER_STACK
+		if((uint64_t)addr >= USER_STACK){
+			return false;
+		}
+
+		//조건 3: 현재 스택 크기 확인 (최대1MB)
+		if((uint8_t*)USER_STACK - (uint8_t*)pg_round_down(addr)> (1 << 20)){
+			return false;
+		}
+
+		//조건 통과되면 스택 증가
+		vm_stack_growth(addr);
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 /* Free the page.
