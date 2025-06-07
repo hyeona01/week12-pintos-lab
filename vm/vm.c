@@ -230,16 +230,9 @@ vm_get_frame(void) {
 /* Growing the stack. */
 static void
 vm_stack_growth(void* addr UNUSED) {
-	struct thread* curr = thread_current();
-
-	/* fault address 까지 페이지 1개씩 확장 */
-	while (curr->stack_bottom > addr) {
-		curr->stack_bottom -= PGSIZE;
-
-		if (!vm_alloc_page(VM_TYPE(VM_ANON | VM_MARKER_0), curr->stack_bottom, 1)
-			|| !vm_claim_page(curr->stack_bottom)) {
-			PANIC("Stack growth failed");
-		}
+	if (!vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)
+		|| !vm_claim_page(addr)) {
+		PANIC("Stack growth failed");
 	}
 }
 
@@ -256,32 +249,32 @@ vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED,
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
-	if (addr == NULL || is_kernel_vaddr(addr)) return false;
+	if (addr == NULL || is_kernel_vaddr(addr)) return 0;
+	if (!not_present) return 0;
 
 	/* stack growth */
 	void* pg_addr = pg_round_down(addr);
-	size_t dist = (uint64_t*)USER_STACK - (uint64_t*)pg_addr;
+	void* rsp = (void*)f->rsp; // user mode
 
-	void* rsp = (void*)f->rsp; // 현재 스택 포인터
+	if (!user)
+		rsp = thread_current()->stack_ptr; // kernel mode - system call
 
 	if (addr >= rsp - 8 && // push, call의 stack 직접 접근을 고려한 8bytes의 마진을 허용
-		dist <= STACK_MAX && addr <= USER_STACK) { // stack의 최대 size를 1MB로 제한
-		vm_stack_growth(addr);
+		addr >= USER_STACK - STACK_MAX && addr <= USER_STACK) { // stack의 최대 size를 1MB로 제한
+		vm_stack_growth(pg_addr);
 		return 1;
 	}
 
 	/* validate and do claim */
 	struct supplemental_page_table* spt UNUSED = &thread_current()->spt;
 	struct page* page = spt_find_page(spt, addr);
-
-	if (not_present) {
-		if (page != NULL) {
-			if (write && !page->rw_w) return 0;
-			return vm_do_claim_page(page);
-		}
+	if (page == NULL) {
 		return 0;
 	}
-	return 0;
+
+	if (write && !page->rw_w) return 0;
+
+	return vm_do_claim_page(page);
 }
 
 /* Free the page.
