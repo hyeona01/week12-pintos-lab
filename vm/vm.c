@@ -262,9 +262,10 @@ vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED,
 	void* pg_addr = pg_round_down(addr);
 	size_t dist = (uint64_t*)USER_STACK - (uint64_t*)pg_addr;
 
-	void* rsp = (void*)f->rsp; // 현재 스택 포인터
+	void* rsp = (void*)f->rsp;
 
-	if (dist <= STACK_MAX && addr <= USER_STACK) { // 1MB 확인
+	if (addr >= rsp - 8 && // push, call의 stack 직접 접근을 고려한 8bytes의 마진을 허용
+		dist <= STACK_MAX && addr <= USER_STACK) { // stack의 최대 size를 1MB로 제한
 		vm_stack_growth(addr);
 		return 1;
 	}
