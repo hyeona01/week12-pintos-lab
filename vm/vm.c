@@ -139,7 +139,7 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	vm_dealloc_page (page);
-	return true;
+	return;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -190,7 +190,7 @@ vm_evict_frame (void) {
 	/* TODO: swap out the victim and return the evicted frame. */
 
 	swap_out(victim->page);
-	return NULL;
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -219,14 +219,15 @@ vm_get_frame (void) {
 	list_push_back(&frame_list, &(frame->elem));
 	lock_release(&frame_lock);
 
-	frame->page = NULL;
-
 	return frame;
 }
 
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	if(!vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), true)){
+		PANIC("vm_stack_growth: failed stk grow");
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -247,14 +248,25 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = spt_find_page(spt, addr);
 	
-	if(not_present){
-		if(page != NULL){
-			if(write && !page->rw_w) return 0;
-			return vm_do_claim_page(page);
-		}
-		return 0;
-	}
-	return 0;
+	 if (not_present && page == NULL) {
+        void *rsp = f->rsp;  /* syscall_handler 에서 저장해 둔 유저 RSP */
+        /* 스택 영역 (PHYS_BASE 이하) 이고, rsp-32B 이내 접근이면 성장 시도 */
+        if (addr < KERN_BASE && addr >= rsp - 64) {
+            vm_stack_growth (addr);
+            /* 성장 후에야 SPT에 새 페이지가 들어 있으므로 다시 lookup */
+            page = spt_find_page (spt, pg_round_down (addr));
+        }
+    }
+
+    /* 3) 페이지 발견 → 쓰기 권한 검사 후 클레임 */
+    if (page != NULL) {
+        if (write && !page->rw_w)
+            return false;
+        return vm_do_claim_page (page);
+    }
+
+    /* 처리 불가 */
+    return false;
 }
 
 /* Free the page.

@@ -71,6 +71,9 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	/* %rdi, %rsi, %rdx, %r10, %r8, %r9 */
 	int syscall_number = (int)f->R.rax;
 
+#ifdef VM
+	thread_current()->stack_ptr = f->rsp;
+#endif
 	switch (syscall_number)
 	{
 	case SYS_HALT:
