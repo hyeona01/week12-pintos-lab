@@ -250,12 +250,17 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	
 	 if (not_present && page == NULL) {
         void *rsp = f->rsp;  /* syscall_handler 에서 저장해 둔 유저 RSP */
-        /* 스택 영역 (PHYS_BASE 이하) 이고, rsp-32B 이내 접근이면 성장 시도 */
-        if (addr < KERN_BASE && addr >= rsp - 64) {
-            vm_stack_growth (addr);
-            /* 성장 후에야 SPT에 새 페이지가 들어 있으므로 다시 lookup */
-            page = spt_find_page (spt, pg_round_down (addr));
-        }
+		if(!user) rsp = thread_current()->stack_ptr;
+		
+		if (USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK)
+            vm_stack_growth(addr);
+        else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)
+            vm_stack_growth(addr);
+
+        // if (addr < KERN_BASE && addr >= rsp - 64) {
+        //     vm_stack_growth (addr);	
+        //     page = spt_find_page (spt, addr);
+        // }
     }
 
     /* 3) 페이지 발견 → 쓰기 권한 검사 후 클레임 */
