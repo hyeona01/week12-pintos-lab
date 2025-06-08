@@ -246,9 +246,9 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	if(addr == NULL || is_kernel_vaddr(addr)) return false;
 
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = spt_find_page(spt, addr);
+	struct page *page = NULL;
 	
-	 if (not_present && page == NULL) {
+	 if (not_present) {
         void *rsp = f->rsp;  /* syscall_handler 에서 저장해 둔 유저 RSP */
 		if(!user) rsp = thread_current()->stack_ptr;
 		
@@ -257,19 +257,17 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
         else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)
             vm_stack_growth(addr);
 
+		page = spt_find_page(spt, addr);
         // if (addr < KERN_BASE && addr >= rsp - 64) {
         //     vm_stack_growth (addr);	
         //     page = spt_find_page (spt, addr);
         // }
+		 /* 3) 페이지 발견 → 쓰기 권한 검사 후 클레임 */
+    	if(page == NULL) return 0;
+    	if (write && !page->rw_w)
+        	return false;
+    	return vm_do_claim_page (page);
     }
-
-    /* 3) 페이지 발견 → 쓰기 권한 검사 후 클레임 */
-    if (page != NULL) {
-        if (write && !page->rw_w)
-            return false;
-        return vm_do_claim_page (page);
-    }
-
     /* 처리 불가 */
     return false;
 }
