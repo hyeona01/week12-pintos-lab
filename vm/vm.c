@@ -230,8 +230,10 @@ vm_get_frame(void) {
 /* Growing the stack. */
 static void
 vm_stack_growth(void* addr UNUSED) {
-	if (!vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)
-		|| !vm_claim_page(addr)) {
+	void* pg_addr = pg_round_down(addr);
+
+	if (!vm_alloc_page(VM_ANON | VM_MARKER_0, pg_addr, 1)
+		|| !vm_claim_page(pg_addr)) {
 		PANIC("Stack growth failed");
 	}
 }
@@ -253,7 +255,6 @@ vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED,
 	if (!not_present) return 0;
 
 	/* stack growth */
-	void* pg_addr = pg_round_down(addr);
 	void* rsp = (void*)f->rsp; // user mode
 
 	if (!user)
@@ -261,7 +262,7 @@ vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED,
 
 	if (addr >= rsp - 8 && // push, call의 stack 직접 접근을 고려한 8bytes의 마진을 허용
 		addr >= USER_STACK - STACK_MAX && addr <= USER_STACK) { // stack의 최대 size를 1MB로 제한
-		vm_stack_growth(pg_addr);
+		vm_stack_growth(addr);
 		return 1;
 	}
 
