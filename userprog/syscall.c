@@ -15,6 +15,7 @@
 #include "filesys/file.h"
 #include "threads/synch.h"
 #include "threads/palloc.h"
+#include "vm/vm.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame*);
@@ -36,6 +37,10 @@ int read(int fd, void* buffer, unsigned size);
 int write(int fd, const void* buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
+
+/* memory mapped */
+void* mmap(void* addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void* addr);
 
 /* System call.
  *
@@ -115,6 +120,12 @@ syscall_handler(struct intr_frame* f UNUSED) {
 		break;
 	case SYS_TELL:
 		f->R.rax = tell(f->R.rdi);
+		break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
 		break;
 
 	default:
@@ -302,7 +313,9 @@ int write(int fd, const void* buffer, unsigned size) {
 	off_t bytes = file_write(write_file, buffer, size);
 	lock_release(&filesys_lock);
 
-	// file_close(write_file); // close
+	// set dirty
+	struct page* page = spt_find_page(&thread_current()->spt, buffer);
+	pml4_set_dirty(&thread_current()->pml4, page, 1);
 
 	return bytes;
 }
@@ -327,4 +340,36 @@ unsigned tell(int fd) {
 		exit(-1);
 	}
 	return file_tell(f);
+}
+
+/* ---------- memory mapped ---------- */
+void* mmap(void* addr, size_t length, int writable, int fd, off_t offset) {
+	if (addr != pg_round_down(addr) || addr == NULL) {
+		return NULL;
+	}
+	if (length == 0) {
+		return NULL;
+	}
+	if (fd == 0 || fd == 1) { // 표준 입출력 fd 에러
+		return NULL;
+	}
+	if (offset % PGSIZE != 0) {
+		return NULL;
+	}
+	if (spt_find_page(&thread_current()->spt, addr) != NULL) {
+		return NULL;
+	}
+	struct file* file = thread_current()->fd_table[fd];
+	if (file == NULL) {
+		return NULL;
+	}
+	if (do_mmap(addr, length, writable, file, offset) == NULL) {
+		return NULL;
+	}
+
+	return addr;
+}
+
+void munmap(void* addr) {
+	do_munmap(addr);
 }

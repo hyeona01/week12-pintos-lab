@@ -52,7 +52,7 @@ vm_anon_init(void) {
 bool
 anon_initializer(struct page* page, enum vm_type type, void* kva) {
 	/* Set up the handler */
-	ASSERT(type == VM_ANON);
+	ASSERT(VM_TYPE(type) == VM_ANON);
 
 	page->operations = &anon_ops;
 	memset(page->frame->kva, 0, PGSIZE);

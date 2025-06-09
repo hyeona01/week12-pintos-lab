@@ -97,8 +97,9 @@ vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writable,
 		 // need to modify(control with switch case)
 		struct page* new_page = (struct page*)malloc(sizeof(struct page));
 
-		if (type == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
-		else uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
+		if (VM_TYPE(type) == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
+		else if (VM_TYPE(type) == VM_FILE) uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
+		else return false;
 
 		new_page->rw_w = writable;
 		/* TODO: Insert the page into the spt. */
