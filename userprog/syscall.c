@@ -71,6 +71,9 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	/* %rdi, %rsi, %rdx, %r10, %r8, %r9 */
 	int syscall_number = (int)f->R.rax;
 
+#ifdef VM
+	thread_current()->stack_ptr = f->rsp;
+#endif
 	switch (syscall_number)
 	{
 	case SYS_HALT:
@@ -133,7 +136,7 @@ void check_address(void* addr) {
 struct page *check_address(void *addr) {
     struct thread *curr = thread_current();
 
-    if (!is_user_vaddr(addr) || addr == NULL || !spt_find_page(&curr->spt, addr))
+    if (!is_user_vaddr(addr) || addr == NULL)
         exit(-1);
 
     return spt_find_page(&curr->spt, addr);
