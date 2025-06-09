@@ -81,7 +81,7 @@ bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
-	ASSERT (VM_TYPE(type) != VM_UNINIT)
+	ASSERT (VM_TYPE(type) != VM_UNINIT);
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
@@ -115,13 +115,11 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
-	page = (struct page*)malloc(sizeof(struct page));
-	page->va = pg_round_down(va);
-
-	struct hash_elem* find_e = hash_find(&spt->spt_hash, &(page->elem));
-	free(page);
-
-	if(find_e == NULL) return NULL;
+	struct page temp;
+	temp.va = pg_round_down(va);
+	
+	struct hash_elem* find_e = hash_find(&spt->spt_hash, &temp.elem);
+	if (find_e == NULL) return NULL;
 
 	return hash_entry(find_e, struct page, elem);
 }
@@ -269,8 +267,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		// 스택 접근인지 다른 접근인지 휴리스틱 판단
 		uint64_t rsp = f->rsp;
 		
-		//조건 1: addr >= rsp - 8
-		if((uint64_t)addr < rsp - 8) {
+		//조건 1: addr >= rsp - 32
+		if((uint64_t)addr < rsp - 32) {
 			return false;
 		}
 
