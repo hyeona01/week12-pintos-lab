@@ -53,13 +53,11 @@ file_backed_swap_out(struct page* page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy(struct page* page) {
-	struct file_page* file_page UNUSED = &page->file;
+	struct thread* curr = thread_current();
 
-	if (pml4_is_dirty(&thread_current()->pml4, page->va)) {
+	if (page->frame && pml4_is_dirty(curr->pml4, page->va)) {
 		file_write_at(page->file.file, page->frame->kva, page->file.length, page->file.offset);
-		pml4_set_dirty(&thread_current()->pml4, page->va, 0);
 	}
-	pml4_clear_page(&thread_current()->pml4, page->va);
 }
 
 /* Do the mmap */
@@ -117,14 +115,21 @@ do_mmap(void* addr, size_t length, int writable,
 void
 do_munmap(void* addr) {
 	/* 'addr'은 mmap()에서 반환된 첫 번째 페이지의 시작 주소 */
-	struct page* p = spt_find_page(&thread_current()->spt, addr);
+	struct thread* curr = thread_current();
+	struct page* p = spt_find_page(&curr->spt, addr);
 	if (p == NULL) return;
 
 	for (int i = 0; i < p->file.page_cnt; i++) {
-		destroy(p);
+		// dirty bit 확인하고 원본에 반영
+		if (p->frame != NULL && pml4_is_dirty(curr->pml4, p->va)) {
+			file_write_at(p->file.file, p->frame->kva, p->file.length, p->file.offset);
+		}
+
+		// spt에서 제거
+		spt_remove_page(&curr->spt, p);
 
 		addr += PGSIZE; // 연속된 다음 페이지로 이동
-		p = spt_find_page(&thread_current()->spt, addr);
+		p = spt_find_page(&curr->spt, addr);
 		if (p == NULL) break;
 	}
 }
