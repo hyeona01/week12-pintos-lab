@@ -355,28 +355,19 @@ unsigned tell(int fd) {
 
 /* ---------- memory mapped ---------- */
 void* mmap(void* addr, size_t length, int writable, int fd, off_t offset) {
-	if (addr != pg_round_down(addr) || addr == NULL) {
-		return NULL;
-	}
-	if (length == 0) {
-		return NULL;
-	}
-	if (fd == 0 || fd == 1) { // 표준 입출력 fd 에러
-		return NULL;
-	}
-	if (offset % PGSIZE != 0) {
-		return NULL;
-	}
-	if (spt_find_page(&thread_current()->spt, addr) != NULL) {
-		return NULL;
-	}
+	if (addr != pg_round_down(addr) || addr == NULL) return NULL;
+	if (is_kernel_vaddr(addr) || is_kernel_vaddr(addr + length - 1)) return NULL;
+
+	if (length == 0) return NULL;
+	if (fd == 0 || fd == 1) return NULL;
+	if (offset % PGSIZE != 0) return NULL;
+
+	if (spt_find_page(&thread_current()->spt, addr) != NULL) return NULL;
+
 	struct file* file = thread_current()->fd_table[fd];
-	if (file == NULL) {
-		return NULL;
-	}
-	if (do_mmap(addr, length, writable, file, offset) == NULL) {
-		return NULL;
-	}
+	if (file == NULL) return NULL;
+
+	if (do_mmap(addr, length, writable, file, offset) == NULL) return NULL;
 
 	return addr;
 }
