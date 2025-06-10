@@ -158,11 +158,12 @@ bool check_buffer(void* buffer, int size) {
 
 	for (int i = 0; i < page_cnt; i++) {
 		struct page* page = spt_find_page(&thread_current()->spt, addr + i * PGSIZE);
-		if (page == NULL || !page->rw_w)
-			return false;
+		if (page == NULL) return true; // stack growth의 목적일 수 있기 떄문에 true로 반환
+		if (!page->rw_w) return false; // write 권한이 없다면 false 반환
 	}
 	return true;
 }
+
 #endif
 
 
