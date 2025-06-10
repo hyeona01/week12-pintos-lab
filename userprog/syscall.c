@@ -150,6 +150,19 @@ struct page* check_address(void* addr) {
 
 	return spt_find_page(&curr->spt, addr);
 }
+
+/* buffer의 쓰기 권한 확인 */
+bool check_buffer(void* buffer, int size) {
+	uint8_t* addr = (uint8_t*)buffer;
+	int page_cnt = (size + PGSIZE - 1) / PGSIZE;
+
+	for (int i = 0; i < page_cnt; i++) {
+		struct page* page = spt_find_page(&thread_current()->spt, addr + i * PGSIZE);
+		if (page == NULL || !page->rw_w)
+			return false;
+	}
+	return true;
+}
 #endif
 
 
@@ -257,7 +270,8 @@ int filesize(int fd) {
 }
 
 int read(int fd, void* buffer, unsigned size) {
-	check_address(buffer);
+	// buffer의 쓰기 권한 확인
+	if (!check_buffer(buffer, size)) exit(-1);
 
 	// 표준 입력의 경우, 키보드의 입력을 받음
 	if (fd == 0) {
