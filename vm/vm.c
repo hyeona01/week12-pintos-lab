@@ -359,6 +359,20 @@ supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED,
 				src_page->uninit.init,
 				src_page->uninit.aux);
 		}
+		// else if(src_type == VM_FILE){
+		// 	struct vm_aux* file_aux = malloc(sizeof(struct vm_aux));
+        //     file_aux->file = src_page->file.file;
+        //     file_aux->ofs = src_page->file.ofs;
+        //     file_aux->read_bytes = src_page->file.read_bytes;
+        //     file_aux->zero_bytes = src_page->file.zero_bytes;
+        //     if (!vm_alloc_page_with_initializer(VM_FILE, src_page, src_page->rw_w, NULL, file_aux))
+        //         return false;
+        //     struct page *file_page = spt_find_page(dst, src_page);
+        //     file_backed_initializer(file_page, VM_FILE, NULL);
+        //     file_page->frame = src_page->frame;
+        //     pml4_set_page(thread_current()->pml4, file_page->va, src_page->frame->kva, src_page->rw_w);
+        //     continue;
+		// }
 		else
 		{
 			if (vm_alloc_page(src_type, src_page->va, src_page->rw_w) && vm_claim_page(src_page->va))

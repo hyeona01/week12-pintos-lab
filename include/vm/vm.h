@@ -57,6 +57,8 @@ struct page {
 	struct hash_elem elem;
 	bool rw_r;
 	bool rw_w;
+
+	int page_count; // mapped page count
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
