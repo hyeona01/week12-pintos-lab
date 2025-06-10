@@ -701,7 +701,6 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 
 		/* Add the page to the process's address space. */
 		if (!install_page(upage, kpage, writable)) {
-			// printf("fail\n");
 			palloc_free_page(kpage);
 			return false;
 		}
@@ -823,6 +822,7 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 		load_arg->ofs = ofs;
 		load_arg->read_bytes = page_read_bytes;
 		load_arg->zero_bytes = page_zero_bytes;
+		load_arg->page_cnt = 1;
 
 		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 			writable, lazy_load_segment, load_arg)) {

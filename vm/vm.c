@@ -87,14 +87,12 @@ vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writable,
 
 		struct supplemental_page_table* spt = &thread_current()->spt;
 
-	// to do
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page(spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 
-		 // need to modify(control with switch case)
 		struct page* new_page = (struct page*)malloc(sizeof(struct page));
 
 		if (VM_TYPE(type) == VM_ANON) uninit_new(new_page, upage, init, type, aux, anon_initializer);
@@ -346,27 +344,45 @@ supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED,
 	struct supplemental_page_table* src UNUSED) {
 	struct hash_iterator i;
 	hash_first(&i, &src->spt_hash);
-	while (hash_next(&i))
-	{
+
+	while (hash_next(&i)) {
 		struct page* src_page = hash_entry(hash_cur(&i), struct page, elem);
 		enum vm_type src_type = src_page->operations->type;
+		void* upage = src_page->va;
+		bool writable = src_page->rw_w;
+		vm_initializer* init = src_page->uninit.init;
 
-		if (src_type == VM_UNINIT)
-		{
-			vm_alloc_page_with_initializer(
-				src_page->uninit.type,
-				src_page->va,
-				src_page->rw_w,
-				src_page->uninit.init,
-				src_page->uninit.aux);
-		}
-		else
-		{
-			if (vm_alloc_page(src_type, src_page->va, src_page->rw_w) && vm_claim_page(src_page->va))
-			{
-				struct page* dst_page = spt_find_page(dst, src_page->va);
-				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+		if (src_type == VM_UNINIT) {
+			/* aux deepcopy - 여러 자식간 aux 공유 */
+			struct vm_aux* aux = (struct vm_aux*)src_page->uninit.aux;
+			struct vm_aux* dst_aux = malloc(sizeof(struct vm_aux));
+			if (dst_aux == NULL) return false;
+
+			dst_aux->file = file_reopen(aux->file);
+			if (dst_aux->file == NULL) {
+				free(dst_aux);
+				return false;
 			}
+
+			dst_aux->ofs = aux->ofs;
+			dst_aux->read_bytes = aux->read_bytes;
+			dst_aux->zero_bytes = aux->zero_bytes;
+			dst_aux->page_cnt = aux->page_cnt;
+
+			if (!vm_alloc_page_with_initializer(src_type, upage, writable, init, dst_aux)) {
+				file_close(dst_aux->file);
+				free(dst_aux);
+				return false;
+			}
+		}
+		else {
+			if (!vm_alloc_page(src_type, upage, writable))
+				return false;
+			if (!vm_claim_page(upage))
+				return false;
+
+			struct page* dst_page = spt_find_page(dst, upage);
+			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
 		}
 	}
 	return true;

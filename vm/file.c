@@ -34,7 +34,7 @@ file_backed_initializer(struct page* page, enum vm_type type, void* aux) {
 	file_page->file = vm_aux->file;
 	file_page->offset = vm_aux->ofs;
 	file_page->page_cnt = vm_aux->page_cnt;
-
+	// printf("** file_backed_initializer -> read_bytes: %d\n", vm_aux->read_bytes);
 	return true;
 }
 

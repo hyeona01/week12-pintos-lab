@@ -261,7 +261,10 @@ int read(int fd, void* buffer, unsigned size) {
 
 	// 표준 입력의 경우, 키보드의 입력을 받음
 	if (fd == 0) {
-		buffer = input_getc();
+		char* buf = (char*)buffer;
+		for (unsigned i = 0; i < size; i++) {
+			buf[i] = input_getc();
+		}
 		return size;
 	}
 
@@ -280,8 +283,6 @@ int read(int fd, void* buffer, unsigned size) {
 	lock_acquire(&filesys_lock);
 	off_t bytes = file_read(read_file, buffer, size);
 	lock_release(&filesys_lock);
-
-	// file_close(read_file); // close
 
 	return bytes;
 }
@@ -312,10 +313,6 @@ int write(int fd, const void* buffer, unsigned size) {
 	lock_acquire(&filesys_lock);
 	off_t bytes = file_write(write_file, buffer, size);
 	lock_release(&filesys_lock);
-
-	// set dirty
-	struct page* page = spt_find_page(&thread_current()->spt, buffer);
-	pml4_set_dirty(&thread_current()->pml4, page, 1);
 
 	return bytes;
 }
