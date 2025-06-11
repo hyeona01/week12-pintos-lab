@@ -15,6 +15,7 @@
 #include "filesys/file.h"
 #include "threads/synch.h"
 #include "threads/palloc.h"
+#include "vm/vm.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame*);
@@ -36,6 +37,10 @@ int read(int fd, void* buffer, unsigned size);
 int write(int fd, const void* buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
+
+/* memory mapped */
+void* mmap(void* addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void* addr);
 
 /* System call.
  *
@@ -70,6 +75,7 @@ void
 syscall_handler(struct intr_frame* f UNUSED) {
 	/* %rdi, %rsi, %rdx, %r10, %r8, %r9 */
 	int syscall_number = (int)f->R.rax;
+	thread_current()->stack_ptr = f->rsp;
 
 	switch (syscall_number)
 	{
@@ -115,6 +121,12 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	case SYS_TELL:
 		f->R.rax = tell(f->R.rdi);
 		break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
+		break;
 
 	default:
 		exit(-1);
@@ -122,12 +134,38 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	}
 }
 
+#ifndef VM
 void check_address(void* addr) {
 	if (addr == NULL || !is_user_vaddr(addr) || pml4_get_page(thread_current()->pml4, addr) == NULL)
 	{
 		exit(-1);
 	}
 }
+#else
+struct page* check_address(void* addr) {
+	struct thread* curr = thread_current();
+
+	if (!is_user_vaddr(addr) || addr == NULL)
+		exit(-1);
+
+	return spt_find_page(&curr->spt, addr);
+}
+
+/* buffer의 쓰기 권한 확인 */
+bool check_buffer(void* buffer, int size) {
+	uint8_t* addr = (uint8_t*)buffer;
+	int page_cnt = (size + PGSIZE - 1) / PGSIZE;
+
+	for (int i = 0; i < page_cnt; i++) {
+		struct page* page = spt_find_page(&thread_current()->spt, addr + i * PGSIZE);
+		if (page == NULL) return true; // stack growth의 목적일 수 있기 떄문에 true로 반환
+		if (!page->rw_w) return false; // write 권한이 없다면 false 반환
+	}
+	return true;
+}
+
+#endif
+
 
 /* ---------- system calls ---------- */
 void halt(void) {
@@ -148,15 +186,12 @@ int exec(const char* cmd_line) {
 	check_address(cmd_line);
 
 	char* new_cmd_line = palloc_get_page(PAL_ZERO);
-	if (new_cmd_line == NULL)
-		return -1;
+	if (new_cmd_line == NULL) return -1;
 
 	strlcpy(new_cmd_line, cmd_line, PGSIZE);
 
 	int result = process_exec(new_cmd_line);
-
-	if (result < 0)
-		return -1;
+	if (result < 0)	return -1;
 
 	return result; // 성공 시 프로세스 ID 반환
 }
@@ -176,12 +211,22 @@ tid_t fork(const char* thread_name, struct intr_frame* f) {
 /* ---------- file manipulation ---------- */
 bool create(const char* file, unsigned initial_size) {
 	check_address(file);
-	return filesys_create(file, initial_size);
+
+	lock_acquire(&filesys_lock);
+	bool result = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+
+	return result;
 }
 
 bool remove(const char* file) {
 	check_address(file);
-	return filesys_remove(file);
+
+	lock_acquire(&filesys_lock);
+	bool result = filesys_remove(file);
+	lock_release(&filesys_lock);
+
+	return result;
 }
 
 int open(const char* file) {
@@ -189,9 +234,9 @@ int open(const char* file) {
 
 	lock_acquire(&filesys_lock);
 	struct file* f = filesys_open(file);
-	lock_release(&filesys_lock);
 
 	if (f == NULL) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
 
@@ -201,12 +246,14 @@ int open(const char* file) {
 	for (int fd = 2; fd < FDCOUNT_LIMIT; fd++) {
 		if (fdt[fd] == NULL) {
 			fdt[fd] = f;
+			lock_release(&filesys_lock);
 			return fd;
 		}
 	}
 
 	// FDT가 가득 찼다면 파일 닫고 -1 반환
 	file_close(f);
+	lock_release(&filesys_lock);
 	return -1;
 }
 
@@ -233,11 +280,15 @@ int filesize(int fd) {
 }
 
 int read(int fd, void* buffer, unsigned size) {
-	check_address(buffer);
+	// buffer의 쓰기 권한 확인
+	if (!check_buffer(buffer, size)) exit(-1);
 
 	// 표준 입력의 경우, 키보드의 입력을 받음
 	if (fd == 0) {
-		buffer = input_getc();
+		char* buf = (char*)buffer;
+		for (unsigned i = 0; i < size; i++) {
+			buf[i] = input_getc();
+		}
 		return size;
 	}
 
@@ -256,8 +307,6 @@ int read(int fd, void* buffer, unsigned size) {
 	lock_acquire(&filesys_lock);
 	off_t bytes = file_read(read_file, buffer, size);
 	lock_release(&filesys_lock);
-
-	// file_close(read_file); // close
 
 	return bytes;
 }
@@ -289,8 +338,6 @@ int write(int fd, const void* buffer, unsigned size) {
 	off_t bytes = file_write(write_file, buffer, size);
 	lock_release(&filesys_lock);
 
-	// file_close(write_file); // close
-
 	return bytes;
 }
 
@@ -314,4 +361,32 @@ unsigned tell(int fd) {
 		exit(-1);
 	}
 	return file_tell(f);
+}
+
+/* ---------- memory mapped ---------- */
+void* mmap(void* addr, size_t length, int writable, int fd, off_t offset) {
+	if (addr != pg_round_down(addr) || addr == NULL) return NULL;
+	if (is_kernel_vaddr(addr) || is_kernel_vaddr(addr + length - 1)) return NULL;
+
+	if (length == 0) return NULL;
+	if (fd == 0 || fd == 1) return NULL;
+	if (offset % PGSIZE != 0) return NULL;
+
+	if (spt_find_page(&thread_current()->spt, addr) != NULL) return NULL;
+
+	struct file* file = thread_current()->fd_table[fd];
+	if (file == NULL) return NULL;
+
+	lock_acquire(&filesys_lock);
+	addr = do_mmap(addr, length, writable, file, offset);
+	lock_release(&filesys_lock);
+	if (addr == NULL) return NULL;
+
+	return addr;
+}
+
+void munmap(void* addr) {
+	lock_acquire(&filesys_lock);
+	do_munmap(addr);
+	lock_release(&filesys_lock);
 }
