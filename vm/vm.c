@@ -83,9 +83,9 @@ bool
 vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writable,
 	vm_initializer* init, void* aux) {
 
-	ASSERT(VM_TYPE(type) != VM_UNINIT)
+	ASSERT(VM_TYPE(type) != VM_UNINIT);
 
-		struct supplemental_page_table* spt = &thread_current()->spt;
+	struct supplemental_page_table* spt = &thread_current()->spt;
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page(spt, upage) == NULL) {
@@ -352,7 +352,10 @@ supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED,
 		bool writable = src_page->rw_w;
 		vm_initializer* init = src_page->uninit.init;
 
-		if (src_page->operations->type == VM_UNINIT) {
+		if (src_page->operations->type == VM_FILE) { // mmap은 자식에게 공유하지 않음
+			continue;
+		}
+		else if (src_page->operations->type == VM_UNINIT) {
 			/* aux deepcopy - 여러 자식간 aux 공유 */
 			struct vm_aux* aux = (struct vm_aux*)src_page->uninit.aux;
 			struct vm_aux* dst_aux = malloc(sizeof(struct vm_aux));

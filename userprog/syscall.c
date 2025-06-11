@@ -186,15 +186,12 @@ int exec(const char* cmd_line) {
 	check_address(cmd_line);
 
 	char* new_cmd_line = palloc_get_page(PAL_ZERO);
-	if (new_cmd_line == NULL)
-		return -1;
+	if (new_cmd_line == NULL) return -1;
 
 	strlcpy(new_cmd_line, cmd_line, PGSIZE);
 
 	int result = process_exec(new_cmd_line);
-
-	if (result < 0)
-		return -1;
+	if (result < 0)	return -1;
 
 	return result; // 성공 시 프로세스 ID 반환
 }
