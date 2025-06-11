@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "intrinsic.h"
+#include "userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -464,6 +465,9 @@ load(const char* file_name, struct intr_frame* if_) {
 		goto done;
 	process_activate(thread_current()); // context switching 유발
 
+	/* filesys lock */
+	lock_acquire(&filesys_lock);
+
 	/* Open executable file. */
 	file = filesys_open(file_name);
 	if (file == NULL) {
@@ -602,6 +606,7 @@ done:
 		}
 		t->exit_status = -1;
 	}
+	lock_release(&filesys_lock);
 	return success;
 }
 

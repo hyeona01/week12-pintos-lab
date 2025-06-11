@@ -211,12 +211,22 @@ tid_t fork(const char* thread_name, struct intr_frame* f) {
 /* ---------- file manipulation ---------- */
 bool create(const char* file, unsigned initial_size) {
 	check_address(file);
-	return filesys_create(file, initial_size);
+
+	lock_acquire(&filesys_lock);
+	bool result = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+
+	return result;
 }
 
 bool remove(const char* file) {
 	check_address(file);
-	return filesys_remove(file);
+
+	lock_acquire(&filesys_lock);
+	bool result = filesys_remove(file);
+	lock_release(&filesys_lock);
+
+	return result;
 }
 
 int open(const char* file) {
@@ -224,9 +234,9 @@ int open(const char* file) {
 
 	lock_acquire(&filesys_lock);
 	struct file* f = filesys_open(file);
-	lock_release(&filesys_lock);
 
 	if (f == NULL) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
 
@@ -236,12 +246,14 @@ int open(const char* file) {
 	for (int fd = 2; fd < FDCOUNT_LIMIT; fd++) {
 		if (fdt[fd] == NULL) {
 			fdt[fd] = f;
+			lock_release(&filesys_lock);
 			return fd;
 		}
 	}
 
 	// FDT가 가득 찼다면 파일 닫고 -1 반환
 	file_close(f);
+	lock_release(&filesys_lock);
 	return -1;
 }
 
@@ -365,11 +377,16 @@ void* mmap(void* addr, size_t length, int writable, int fd, off_t offset) {
 	struct file* file = thread_current()->fd_table[fd];
 	if (file == NULL) return NULL;
 
-	if (do_mmap(addr, length, writable, file, offset) == NULL) return NULL;
+	lock_acquire(&filesys_lock);
+	addr = do_mmap(addr, length, writable, file, offset);
+	lock_release(&filesys_lock);
+	if (addr == NULL) return NULL;
 
 	return addr;
 }
 
 void munmap(void* addr) {
+	lock_acquire(&filesys_lock);
 	do_munmap(addr);
+	lock_release(&filesys_lock);
 }
