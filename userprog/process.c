@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "intrinsic.h"
+#include "userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -161,7 +162,6 @@ __do_fork(void* aux) {
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame* parent_if = &parent->parent_if;
 	bool succ = true;
-	// printf("*** fork - thread : %s\n", current->name);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy(&if_, parent_if, sizeof(struct intr_frame));
@@ -465,6 +465,9 @@ load(const char* file_name, struct intr_frame* if_) {
 		goto done;
 	process_activate(thread_current()); // context switching 유발
 
+	/* filesys lock */
+	lock_acquire(&filesys_lock);
+
 	/* Open executable file. */
 	file = filesys_open(file_name);
 	if (file == NULL) {
@@ -603,6 +606,7 @@ done:
 		}
 		t->exit_status = -1;
 	}
+	lock_release(&filesys_lock);
 	return success;
 }
 
@@ -702,7 +706,6 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 
 		/* Add the page to the process's address space. */
 		if (!install_page(upage, kpage, writable)) {
-			// printf("fail\n");
 			palloc_free_page(kpage);
 			return false;
 		}
@@ -757,35 +760,35 @@ install_page(void* upage, void* kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
+bool
 lazy_load_segment(struct page* page, void* aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	struct vm_aux* load_arg = (struct vm_aux*) aux;
+	struct vm_aux* load_arg = (struct vm_aux*)aux;
 	bool succ = true;
-	void *kva = page->frame->kva;
-	ASSERT(kva!=NULL);
+	void* kva = page->frame->kva;
+	ASSERT(kva != NULL);
 
-	if(load_arg->read_bytes > 0){
+	if (load_arg->read_bytes > 0) {
 		int bytes_read = file_read_at(
-            load_arg->file,
-            kva,
-            load_arg->read_bytes,
-            load_arg->ofs
-        );
-        if (bytes_read != (int) load_arg->read_bytes) {
-            succ = false;
-            goto done;
-        }
+			load_arg->file,
+			kva,
+			load_arg->read_bytes,
+			load_arg->ofs
+		);
+		if (bytes_read != (int)load_arg->read_bytes) {
+			succ = false;
+			goto done;
+		}
 	}
 
-    if (load_arg->zero_bytes > 0) {
-        memset(kva + load_arg->read_bytes, 0, load_arg->zero_bytes);
-    }
+	if (load_arg->zero_bytes > 0) {
+		memset(kva + load_arg->read_bytes, 0, load_arg->zero_bytes);
+	}
 done:
-    free(load_arg);
-    return succ;
+	free(load_arg);
+	return succ;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -819,16 +822,17 @@ load_segment(struct file* file, off_t ofs, uint8_t* upage,
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 
 		struct vm_aux* load_arg = malloc(sizeof(struct vm_aux));
-		if(load_arg == NULL) return false;
+		if (load_arg == NULL) return false;
 		load_arg->file = file;
 		load_arg->ofs = ofs;
 		load_arg->read_bytes = page_read_bytes;
 		load_arg->zero_bytes = page_zero_bytes;
+		load_arg->page_cnt = 1;
 
-		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
-			writable, lazy_load_segment, load_arg)){
-				free(load_arg);
-				return false;
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
+			writable, lazy_load_segment, load_arg)) {
+			free(load_arg);
+			return false;
 		}
 
 		/* Advance. */
@@ -850,16 +854,16 @@ setup_stack(struct intr_frame* if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	 /* TODO: Your code goes here */
-	
-    if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1)) {
-        success = vm_claim_page(stack_bottom);
 
-        if (success) {
-            if_->rsp = USER_STACK;
-            thread_current()->stack_bottom = stack_bottom;
-        }
-    }
-    return success;
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1)) {
+		success = vm_claim_page(stack_bottom);
+
+		if (success) {
+			if_->rsp = USER_STACK;
+			thread_current()->stack_bottom = stack_bottom;
+		}
+	}
+	return success;
 
 }
 #endif /* VM */
