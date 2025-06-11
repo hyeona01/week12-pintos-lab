@@ -9,7 +9,7 @@ enum vm_type;
 struct file_page {
 	struct file* file;
 	off_t offset;
-	size_t length;
+	size_t read_bytes;
 	int page_cnt;
 };
 

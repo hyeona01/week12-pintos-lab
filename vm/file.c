@@ -33,6 +33,7 @@ file_backed_initializer(struct page* page, enum vm_type type, void* aux) {
 	struct vm_aux* vm_aux = (struct vm_aux*)aux;
 	file_page->file = vm_aux->file;
 	file_page->offset = vm_aux->ofs;
+	file_page->read_bytes = vm_aux->read_bytes;
 	file_page->page_cnt = vm_aux->page_cnt;
 	// printf("** file_backed_initializer -> read_bytes: %d\n", vm_aux->read_bytes);
 	return true;
@@ -56,7 +57,7 @@ file_backed_destroy(struct page* page) {
 	struct thread* curr = thread_current();
 
 	if (page->frame && pml4_is_dirty(curr->pml4, page->va)) {
-		file_write_at(page->file.file, page->frame->kva, page->file.length, page->file.offset);
+		file_write_at(page->file.file, page->frame->kva, page->file.read_bytes, page->file.offset);
 	}
 }
 
@@ -121,15 +122,12 @@ do_munmap(void* addr) {
 
 	for (int i = 0; i < p->file.page_cnt; i++) {
 		// dirty bit 확인하고 원본에 반영
-		if (p->frame != NULL && pml4_is_dirty(curr->pml4, p->va)) {
-			file_write_at(p->file.file, p->frame->kva, p->file.length, p->file.offset);
+		if (pml4_is_dirty(curr->pml4, p->va)) {
+			file_write_at(p->file.file, addr, p->file.read_bytes, p->file.offset);
+			pml4_set_dirty(curr->pml4, p->va, 0);
 		}
 
-		// spt에서 제거
-		spt_remove_page(&curr->spt, p);
-
+		pml4_clear_page(curr->pml4, p->va);
 		addr += PGSIZE; // 연속된 다음 페이지로 이동
-		p = spt_find_page(&curr->spt, addr);
-		if (p == NULL) break;
 	}
 }
